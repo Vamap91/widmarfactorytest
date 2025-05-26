@@ -40,10 +40,16 @@ class GoogleCloudService:
     """Serviço real do Google Cloud TTS + Translate"""
     
     def __init__(self):
-        # Obter credenciais do Streamlit Secrets
-        self.project_id = st.secrets.get("GOOGLE_CLOUD_PROJECT", "demo-project")
-        self.api_key = st.secrets.get("GOOGLE_CLOUD_API_KEY", None)
-        self.service_account_info = st.secrets.get("GOOGLE_APPLICATION_CREDENTIALS", None)
+        # Obter credenciais do Streamlit Secrets (configurado em Settings > Secrets)
+        try:
+            self.project_id = st.secrets["GOOGLE_CLOUD_PROJECT"] if "GOOGLE_CLOUD_PROJECT" in st.secrets else "demo-project"
+            self.api_key = st.secrets["GOOGLE_CLOUD_API_KEY"] if "GOOGLE_CLOUD_API_KEY" in st.secrets else None
+            self.service_account_info = st.secrets["GOOGLE_APPLICATION_CREDENTIALS"] if "GOOGLE_APPLICATION_CREDENTIALS" in st.secrets else None
+        except Exception:
+            # Fallback para modo demo se secrets não estão configurados
+            self.project_id = "demo-project"
+            self.api_key = None
+            self.service_account_info = None
         
         # URLs das APIs
         self.tts_url = "https://texttospeech.googleapis.com/v1/text:synthesize"
@@ -280,7 +286,10 @@ class ElevenLabsService:
     """Serviço do ElevenLabs para comparação"""
     
     def __init__(self):
-        self.api_key = st.secrets.get("ELEVENLABS_API_KEY", None)
+        try:
+            self.api_key = st.secrets["ELEVENLABS_API_KEY"] if "ELEVENLABS_API_KEY" in st.secrets else None
+        except Exception:
+            self.api_key = None
         self.base_url = "https://api.elevenlabs.io/v1"
     
     def synthesize_speech(self, text: str, voice_id: str = "21m00Tcm4TlvDq8ikWAM") -> Dict:
@@ -512,16 +521,23 @@ def main():
         st.header("🔐 Status das APIs")
         
         # Google Cloud
-        google_configured = bool(st.secrets.get("GOOGLE_CLOUD_API_KEY") or st.secrets.get("GOOGLE_APPLICATION_CREDENTIALS"))
-        st.write("**Google Cloud:**", "✅ Configurado" if google_configured else "❌ Não configurado")
+        try:
+            google_configured = bool(st.secrets.get("GOOGLE_CLOUD_API_KEY") or st.secrets.get("GOOGLE_APPLICATION_CREDENTIALS"))
+        except:
+            google_configured = False
+        
+        st.write("**Google Cloud:**", "✅ Configurado" if google_configured else "❌ Modo Demo")
         
         # ElevenLabs
-        elevenlabs_configured = bool(st.secrets.get("ELEVENLABS_API_KEY"))
-        st.write("**ElevenLabs:**", "✅ Configurado" if elevenlabs_configured else "❌ Não configurado")
+        try:
+            elevenlabs_configured = bool(st.secrets.get("ELEVENLABS_API_KEY"))
+        except:
+            elevenlabs_configured = False
+        
+        st.write("**ElevenLabs:**", "✅ Configurado" if elevenlabs_configured else "❌ Modo Demo")
         
         if not google_configured and not elevenlabs_configured:
-            st.warning("⚠️ Executando em modo simulação")
-            st.info("Configure as APIs em Settings > Secrets")
+            st.info("ℹ️ **Modo Demo Ativo**\nPara usar APIs reais, configure as chaves em **Settings > Secrets**")
         
         st.markdown("---")
         
@@ -767,41 +783,49 @@ def main():
         
         st.subheader("1. 🔧 Configuração das APIs")
         
-        with st.expander("Google Cloud Setup"):
-            st.code("""
-# 1. Criar projeto no Google Cloud Console
-# 2. Ativar as seguintes APIs:
-#    - Cloud Text-to-Speech API
-#    - Cloud Translation API
-# 3. Criar Service Account e baixar JSON
-# 4. Ou criar API Key para desenvolvimento
-
-# Configurar no Streamlit Secrets:
-GOOGLE_CLOUD_PROJECT = "seu-projeto-id"
-GOOGLE_CLOUD_API_KEY = "sua-api-key"
-
-# OU para produção (recomendado):
-GOOGLE_APPLICATION_CREDENTIALS = '''
-{
-  "type": "service_account",
-  "project_id": "seu-projeto",
-  "private_key_id": "...",
-  "private_key": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
-  "client_email": "service-account@projeto.iam.gserviceaccount.com",
-  "client_id": "...",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token"
-}
-'''
+        with st.expander("🔧 Configurar APIs no Streamlit Cloud"):
+            st.markdown("""
+            **Para usar APIs reais, configure em Settings > Secrets:**
+            
+            ```toml
+            # Google Cloud (Opção 1: API Key)
+            GOOGLE_CLOUD_PROJECT = "seu-projeto-id"
+            GOOGLE_CLOUD_API_KEY = "sua-api-key"
+            
+            # Google Cloud (Opção 2: Service Account - Recomendado)
+            GOOGLE_APPLICATION_CREDENTIALS = '''
+            {
+              "type": "service_account",
+              "project_id": "seu-projeto",
+              "private_key_id": "...",
+              "private_key": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
+              "client_email": "service-account@projeto.iam.gserviceaccount.com",
+              "client_id": "...",
+              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+              "token_uri": "https://oauth2.googleapis.com/token"
+            }
+            '''
+            
+            # ElevenLabs (opcional)
+            ELEVENLABS_API_KEY = "sua-api-key-elevenlabs"
+            ```
+            
+            **Passos:**
+            1. Clique em **Settings** no menu da app
+            2. Vá para **Secrets**
+            3. Cole as configurações acima
+            4. Clique **Save**
+            5. A app será reiniciada automaticamente
             """)
-        
-        with st.expander("ElevenLabs Setup (para comparação)"):
-            st.code("""
-# 1. Criar conta no ElevenLabs
-# 2. Obter API Key no dashboard
-# 3. Configurar no Streamlit Secrets:
-
-ELEVENLABS_API_KEY = "sua-api-key-elevenlabs"
+            
+            st.info("💡 **Dica:** Sem as APIs configuradas, a aplicação funciona em **modo demo** com dados simulados.")
+            
+        with st.expander("🔗 Links Úteis"):
+            st.markdown("""
+            - [Google Cloud Console](https://console.cloud.google.com)
+            - [ElevenLabs Dashboard](https://elevenlabs.io/app)
+            - [Streamlit Cloud](https://share.streamlit.io)
+            - [Documentação Streamlit Secrets](https://docs.streamlit.io/streamlit-cloud/get-started/deploy-an-app/connect-to-data-sources/secrets-management)
             """)
         
         st.subheader("2. 📁 Estrutura do Projeto")
