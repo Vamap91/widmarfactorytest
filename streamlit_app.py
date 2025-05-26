@@ -1,3 +1,6 @@
+# Arquivo principal: streamlit_app.py
+# Esta é uma cópia do app.py otimizada para deploy no Streamlit Cloud
+
 import streamlit as st
 import requests
 import json
@@ -11,10 +14,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from dataclasses import dataclass
-import asyncio
-import aiohttp
-from concurrent.futures import ThreadPoolExecutor
-import threading
 
 # Configuração da página
 st.set_page_config(
@@ -63,8 +62,12 @@ class GoogleCloudService:
         """Obtém token de acesso usando Service Account"""
         if self.service_account_info:
             try:
-                import jwt
-                import time
+                # Importar biblioteca JWT
+                try:
+                    import jwt
+                except ImportError:
+                    st.error("PyJWT não instalado. Usando fallback para API Key.")
+                    return self.api_key
                 
                 # Parse das credenciais JSON
                 if isinstance(self.service_account_info, str):
@@ -91,11 +94,14 @@ class GoogleCloudService:
                     data={
                         "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
                         "assertion": token
-                    }
+                    },
+                    timeout=30
                 )
                 
                 if response.status_code == 200:
                     return response.json()["access_token"]
+                else:
+                    st.error(f"Erro na autenticação OAuth: {response.status_code}")
                     
             except Exception as e:
                 st.error(f"Erro na autenticação: {e}")
@@ -118,7 +124,8 @@ class GoogleCloudService:
             # Configurar autenticação
             if self.service_account_info:
                 token = self._get_access_token()
-                headers["Authorization"] = f"Bearer {token}"
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
             elif self.api_key:
                 params["key"] = self.api_key
             
@@ -134,7 +141,8 @@ class GoogleCloudService:
                 self.translate_url,
                 headers=headers,
                 params=params,
-                json=payload
+                json=payload,
+                timeout=30
             )
             
             if response.status_code == 200:
@@ -173,7 +181,8 @@ class GoogleCloudService:
             # Configurar autenticação
             if self.service_account_info:
                 token = self._get_access_token()
-                headers["Authorization"] = f"Bearer {token}"
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
             elif self.api_key:
                 params["key"] = self.api_key
             
@@ -198,7 +207,8 @@ class GoogleCloudService:
                 self.tts_url,
                 headers=headers,
                 params=params,
-                json=payload
+                json=payload,
+                timeout=30
             )
             
             if response.status_code == 200:
@@ -316,7 +326,8 @@ class ElevenLabsService:
             response = requests.post(
                 f"{self.base_url}/text-to-speech/{voice_id}",
                 headers=headers,
-                json=payload
+                json=payload,
+                timeout=30
             )
             
             if response.status_code == 200:
@@ -584,11 +595,11 @@ def main():
             )
         
         with col2:
-            savings = current_cost - google_cost
+            savings_google = current_cost - google_cost
             st.metric(
                 "🎯 Google Cloud (Meta)",
                 f"R$ {google_cost:,.2f}/mês", 
-                f"-R$ {savings:,.2f} ({(savings/current_cost*100):.1f}%)"
+                f"-R$ {savings_google:,.2f} ({(savings_google/current_cost*100):.1f}%)"
             )
         
         with col3:
@@ -605,7 +616,7 @@ def main():
         df_comparison = pd.DataFrame([
             {
                 "Provedor": result["name"],
-                "Custo Total": result["total_cost"],
+                "Custo Total": f"R$ {result['total_cost']:,.2f}",
                 "TTS": result["tts_cost"],
                 "Tradução": result["translate_cost"],
                 "Qualidade": result["quality_score"],
@@ -656,7 +667,6 @@ def main():
                         provider_choice
                     )
                 
-                # Resultados
                 st.success(f"✅ Processamento concluído em {results['total_time']:.2f}s")
                 
                 # Métricas gerais
@@ -832,19 +842,13 @@ def main():
         
         st.code("""
 video-generation-poc/
-├── app.py                    # Aplicação principal (este arquivo)
-├── requirements.txt          # Dependências Python
+├── streamlit_app.py         # 🎯 Aplicação principal (este arquivo)
+├── requirements.txt         # 📦 Dependências Python
 ├── .streamlit/
-│   └── config.toml          # Configurações do Streamlit
-├── services/
-│   ├── __init__.py
-│   ├── google_cloud.py      # Serviços Google Cloud
-│   ├── elevenlabs.py        # Serviços ElevenLabs
-│   └── cost_analyzer.py     # Análise de custos
-├── utils/
-│   ├── __init__.py
-│   └── helpers.py           # Funções auxiliares
-└── README.md                # Documentação
+│   └── config.toml         # ⚙️ Configurações do Streamlit
+└── README.md               # 📄 Documentação
+
+> 📝 Nota: secrets.toml não é necessário pois as secrets são configuradas diretamente no Streamlit Cloud.
         """)
         
         st.subheader("3. 🚀 Deploy no Streamlit Cloud")
@@ -932,52 +936,6 @@ class GoogleTTSService:
             return result["audioContent"]
         else:
             raise Exception(f"TTS Error: {response.text}")
-            """)
-        
-        with st.expander("Migração do translation.py"):
-            st.code("""
-# ANTES (OpenAI)
-import openai
-
-class TranslationService:
-    def translate_text(self, text, target_language):
-        response = openai.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": f"Translate to {target_language}"},
-                {"role": "user", "content": text}
-            ]
-        )
-        return response.choices[0].message.content
-
-# DEPOIS (Google Translate)
-import requests
-
-class GoogleTranslateService:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        self.base_url = "https://translation.googleapis.com/language/translate/v2"
-    
-    def translate_text(self, text, target_language, source_language="pt"):
-        params = {"key": self.api_key}
-        payload = {
-            "q": text,
-            "target": target_language,
-            "source": source_language,
-            "format": "text"
-        }
-        
-        response = requests.post(
-            self.base_url,
-            params=params,
-            json=payload
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            return result["data"]["translations"][0]["translatedText"]
-        else:
-            raise Exception(f"Translation Error: {response.text}")
             """)
         
         st.subheader("5. 📊 Monitoramento de Custos")
